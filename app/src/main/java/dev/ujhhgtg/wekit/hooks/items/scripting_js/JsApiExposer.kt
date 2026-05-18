@@ -190,20 +190,34 @@ object JsApiExposer {
         return res
     }
 
+    private inline fun <T> allowNetworkOnMainThread(block: () -> T): T {
+        val policy = android.os.StrictMode.getThreadPolicy()
+        android.os.StrictMode.setThreadPolicy(
+            android.os.StrictMode.ThreadPolicy.Builder(policy).permitNetwork().build()
+        )
+        return try {
+            block()
+        } finally {
+            android.os.StrictMode.setThreadPolicy(policy)
+        }
+    }
+
     private fun performDownload(url: String, destFile: Path): Boolean {
         val request = Request.Builder().url(url).build()
 
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return false
+        return allowNetworkOnMainThread {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@allowNetworkOnMainThread false
 
-            @Suppress("UNNECESSARY_SAFE_CALL")
-            response.body?.byteStream()?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
+                @Suppress("UNNECESSARY_SAFE_CALL")
+                response.body?.byteStream()?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
                 }
             }
+            true
         }
-        return true
     }
 
     private fun httpGet(
@@ -228,7 +242,7 @@ object JsApiExposer {
         // Add headers
         headers?.let { applyHeaders(requestBuilder, it) }
 
-        val response = httpClient.newCall(requestBuilder.build()).execute()
+        val response = allowNetworkOnMainThread { httpClient.newCall(requestBuilder.build()).execute() }
         return createHttpResponse(response)
     }
 
@@ -266,7 +280,7 @@ object JsApiExposer {
         // Add headers
         headers?.let { applyHeaders(requestBuilder, it) }
 
-        val response = httpClient.newCall(requestBuilder.build()).execute()
+        val response = allowNetworkOnMainThread { httpClient.newCall(requestBuilder.build()).execute() }
         return createHttpResponse(response)
     }
 
